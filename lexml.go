@@ -2,7 +2,6 @@ package lexml
 
 import (
 	"fmt"
-    "bytes"
     "slices"
 )
 
@@ -51,12 +50,11 @@ func (set Set) Parse() (Data, error) {
 
     fmt.Printf("tagList: %v\n", tagList)
 
-    // now that we generates the positions of very tags with their closing and opening locations, we can parse the content recursively as Data
-    tagLoc = getWeights(tagLoc)
-
-    /*for _, tag := range tagLoc {
-        fmt.Println(tag.Weight)
-    }*/
+    for _, loc := range tagLoc {
+        open := set.Raw[loc.Open.Start:loc.Open.End]
+        close := set.Raw[loc.Close.Start:loc.Close.End]
+        fmt.Println("open:", loc.Open, open, string(open), "\nclose:", loc.Close, close, string(close))
+    }
 
     return Data{}, nil
 }
@@ -79,44 +77,28 @@ func NewSet(buff []byte) *Set {
 func getTags(buff []byte) ([]Tag, []locations, error) {
 
     tagList := make([]Tag, 0)
-    splitted := split(buff)
     loc := make([]locations, 0)
+    
+    splitted := split(buff)
+    tagList = getListTags(buff, splitted)
+    open := getOpenTags(buff, splitted)
+    close := getCloseTags(buff, splitted)
 
-    for index := range splitted {
-        start := splitted[index].Start
-        end := splitted[index].End
-        name := buff[start:end]
-       
-        if !(name[0] == '/') {
-            
-            if !tagExist(string(name), tagList) {
-                tagList = append(tagList, Tag{Id: len(tagList), Name: string(name)})
-            }
-
-            open := coordinates{
-                Start: start,
-                End: end,
-            }
-            close, err := getClosTag(buff, splitted, index)
-            if err != nil {
-                return []Tag{}, []locations{}, fmt.Errorf("getTags() -> %s", err)
-            }
-            loc = append(loc, locations{
-                Open: open,
-                Close: close,
-                Weight: 0,
-            })
-        }
+    loc, err := locAppend(buff, open, close)
+    if err != nil {
+        return nil, nil, fmt.Errorf("getTags() -> %s", err)
     }
 
-    return tagList, loc, nil
+    return tagList, loc[:], nil
 }
 
 // split generate a coordinates list from every tag and tag ending bounds
 func split(buff []byte) []coordinates {
+
     coo := make([]coordinates, 0)
 
     for index, char := range buff {
+
         switch char {
             case '<':
                 coo = append(coo, coordinates{Start: index + 1, End: 0})
@@ -127,22 +109,89 @@ func split(buff []byte) []coordinates {
     return coo
 }
 
-// getClosTag retrieves the coordinates of every closing tags
-func getClosTag(buff []byte, split []coordinates, index int) (coordinates, error) {
+// getListTags return a list of every tag found in the file
+func getListTags(buff []byte, split []coordinates) []Tag {
 
-    start := split[index].Start
-    end := split[index].End
-    name := []byte{47}
-    name = slices.Concat(name, buff[start:end])
-    
-    for indx := range split {
-        next := buff[split[indx].Start:split[indx].End]
-        if bytes.Equal(next, name) {
-            return split[indx], nil
+    tagList := make([]Tag, 0)
+
+    for index := range split {
+
+        start := split[index].Start
+        end := split[index].End
+        name := buff[start:end]
+       
+        if !(name[0] == '/') {
+            if !tagExist(string(name), tagList) {
+                tagList = append(tagList, Tag{Id: len(tagList), Name: string(name)})
+            }
         }
     }
+    return tagList
+}
+
+// getOpenTags return a list of every opening tag found in the file
+func getOpenTags(buff []byte, split []coordinates) []coordinates {
+
+    open := make([]coordinates, 0)
+
+    for index := range split {
+
+        start := split[index].Start
+        end := split[index].End
+        name := buff[start:end]
+       
+        if !(name[0] == '/') {
+            open = append(open, coordinates{
+                Start: start,
+                End: end,
+            })
+        }
+    }
+    return open
+}
+
+// getClosTag retrieves the coordinates of every closing tags
+func getCloseTags(buff []byte, split []coordinates) []coordinates {
+
+    close := make([]coordinates, 0)
+
+    for index := range split {
+        start := split[index].Start
+        end := split[index].End
+        name := buff[start:end]
+
+        if name[0] == '/' {
+            close = append(close, coordinates{
+                Start: start,
+                End: end,
+            })
+        }
+    }
+    return close
+}
+
+// locAppend merge two []coordinates lists into a list of locations type
+func locAppend(buff []byte, open []coordinates, close []coordinates) ([]locations, error) {
     
-    return coordinates{}, fmt.Errorf("getClosTag() -> Closing tag not found for '%s'.", string(name))
+    if len(open) != len(close) {
+        return nil, fmt.Errorf("locAppend() -> Malformed XML file, got '%d' opening tags with '%d' closing tags.", len(open), len(close))
+    }
+
+    loc := make([]locations, 0)
+    
+    for _, op := range open {
+        for idx, cl := range close {
+
+            if slices.Equal(buff[op.Start:op.End], buff[cl.Start+1:cl.End]) {
+                loc = append(loc, locations{
+                    Open: op,
+                    Close: close[idx],
+                })
+                break
+            }
+        }
+    }
+    return loc[:], nil
 }
 
 // getWeight return the weight of each tags from their locations. This weight value is used to check wether a specific tag is into another one.
@@ -154,7 +203,6 @@ func getWeights(loc []locations) []locations {
             continue
         }
         tag.Weight = compWeights(index, loc)
-        fmt.Println(tag.Weight)
     }
     return loc
 }
@@ -163,19 +211,18 @@ func getWeights(loc []locations) []locations {
 func compWeights(index int, loc []locations) int {
     
     weight := 0
+    cmp := loc[index]
 
     for _, tag := range loc {
         
-        open := tag.Open.Start < loc[index].Open.Start
-        close := tag.Close.End > loc[index].Open.End
-
-        //fmt.Println(open, tag.Open.Start, loc[index].Open.Start, "|", close, tag.Close.End, loc[index].Open.End, "|", (open && close) )
+        open := tag.Open.Start < cmp.Open.Start || tag.Open.End < cmp.Open.End
+        close := tag.Close.Start > cmp.Close.Start || tag.Close.End > cmp.Close.End
 
         if open && close {
             weight = weight + 1
         }
     }
-    return weight
+    return weight - 1
 }
 
 // tagExist checks if a tag exist in the whole list of tags
