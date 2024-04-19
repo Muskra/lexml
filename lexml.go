@@ -43,18 +43,26 @@ type coordinates struct {
 // Parse convert the whole file into a DataSet datastructure
 func (set Set) Parse() (Data, error) {
     
-    tagList, tagLoc, err := getTags(set.Raw)
+    //tagList
+    _, tagLoc, err := getTags(set.Raw)
     if err != nil {
         return Data{}, fmt.Errorf("%s", err)
     }
 
-    fmt.Printf("tagList: %v\n", tagList)
-
+    //fmt.Printf("tagList: %v\n", tagList)
     for _, loc := range tagLoc {
         open := set.Raw[loc.Open.Start:loc.Open.End]
         close := set.Raw[loc.Close.Start:loc.Close.End]
         fmt.Println("open:", loc.Open, open, string(open), "\nclose:", loc.Close, close, string(close))
     }
+
+    tagLoc = getWeights(tagLoc)
+    tagLoc = make([]locations, 0)
+    for _, l := range tagLoc {
+
+        fmt.Println(l)
+    }
+    //getData(set.Raw, tagList, tagLoc)
 
     return Data{}, nil
 }
@@ -91,6 +99,14 @@ func getTags(buff []byte) ([]Tag, []locations, error) {
 
     return tagList, loc[:], nil
 }
+
+// getData returns a Data type that recursively contains the tags and their contained informations
+func getData(buff []byte, tags []Tag, loc []locations) {
+    
+    for _, lc := range loc {
+        fmt.Println(string(buff[lc.Open.End:lc.Close.Start]))
+    }
+} 
 
 // split generate a coordinates list from every tag and tag ending bounds
 func split(buff []byte) []coordinates {
@@ -179,9 +195,10 @@ func locAppend(buff []byte, open []coordinates, close []coordinates) ([]location
 
     loc := make([]locations, 0)
     
-    for _, op := range open {
-        for idx, cl := range close {
-
+    for index, op := range open {
+        idx := index
+        for ; idx < len(close); idx = idx + 1 {
+            cl := close[idx]
             if slices.Equal(buff[op.Start:op.End], buff[cl.Start+1:cl.End]) {
                 loc = append(loc, locations{
                     Open: op,
@@ -202,27 +219,35 @@ func getWeights(loc []locations) []locations {
             tag.Weight = 0
             continue
         }
-        tag.Weight = compWeights(index, loc)
+        loc[index].Weight = countWeight(index, loc)
+        fmt.Println(loc[index].Weight)
     }
     return loc
 }
 
 // compWeights finds the weight of a specific locations
-func compWeights(index int, loc []locations) int {
-    
+func countWeight(index int, loc []locations) int {
+
+    chkOpn := loc[index].Open
+    chkCls := loc[index].Close
+
     weight := 0
-    cmp := loc[index]
 
-    for _, tag := range loc {
-        
-        open := tag.Open.Start < cmp.Open.Start || tag.Open.End < cmp.Open.End
-        close := tag.Close.Start > cmp.Close.Start || tag.Close.End > cmp.Close.End
+    /*
+    
+    check if the actual position is between any other positions
+    we counts the number of tags that are higher value than the actual position
 
-        if open && close {
+    */
+
+    for _, check := range loc {
+        cmp := (chkOpn.Start > check.Open.End) && (chkCls.End < check.Close.Start)
+        if cmp {
             weight = weight + 1
         }
     }
-    return weight - 1
+
+    return weight
 }
 
 // tagExist checks if a tag exist in the whole list of tags
