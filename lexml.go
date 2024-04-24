@@ -2,15 +2,15 @@ package lexml
 
 import (
 	"fmt"
-    "slices"
+    "io"
+    "encoding/xml"
 )
 
-/* STRUCTURES */
 // Set is the entrypoint struct to interact with this program with Fields as a list of Tag types, Content that represent the whole XML file, Raw wich represent the raw byte data of the file
 type Set struct {
     Fields []Tag
     Content Data
-    Raw []byte
+    Raw io.Reader
 }
 
 // Data is a recursive representation of a parsed XML file content
@@ -27,235 +27,144 @@ type Tag struct {
     Name string
 }
 
-// locations is a superset of coordinates, it stores coordinates of the opening and the closing tags
-type locations struct {
-    Open coordinates
-    Close coordinates
-    Weight int
-}
-
-// coordinates represents coordinates of a single tag
-type coordinates struct {
-    Start int
-    End int
-}
-
 // Parse convert the whole file into a DataSet datastructure
 func (set Set) Parse() (Data, error) {
-    
-    //tagList
-    _, tagLoc, err := getTags(set.Raw)
+
+    decoder := xml.NewDecoder(set.Raw)
+
+    tagList := findTags(decoder)
+   
+    fmt.Println(tagList)
+
+    data, err := recurse(decoder, tagList)
     if err != nil {
-        return Data{}, fmt.Errorf("%s", err)
+        return Data{}, fmt.Errorf("Parse() -> %s", err)
     }
 
-    //fmt.Printf("tagList: %v\n", tagList)
-    for _, loc := range tagLoc {
-        open := set.Raw[loc.Open.Start:loc.Open.End]
-        close := set.Raw[loc.Close.Start:loc.Close.End]
-        fmt.Println("open:", loc.Open, open, string(open), "\nclose:", loc.Close, close, string(close))
-    }
-
-    tagLoc = getWeights(tagLoc)
-    tagLoc = make([]locations, 0)
-    for _, l := range tagLoc {
-
-        fmt.Println(l)
-    }
-    //getData(set.Raw, tagList, tagLoc)
-
-    return Data{}, nil
+    return data, nil
 }
 
 // NewSet generates a set that's retuned as pointer
-func NewSet(buff []byte) *Set {
+func NewSet(buff io.Reader) *Set {
+
     return &Set{
+
         Fields: make([]Tag, 0),
+        
         Content: Data{
             Type: nil,
             Index: 0,
             Value: "",
             Inners: make([]Data, 0),
         },
-        Raw: buff[:],
+        
+        Raw: buff,
     }
 }
 
-// getTags returns a list of Tag types wich defines the exhaustive list of tags. It also return a list of locations types wich gives indication on where each tags are in the buffer
-func getTags(buff []byte) ([]Tag, []locations, error) {
+// recurse recreates a recursive Data datastructure representation of the file itself. It's taking every tags, subtags and data to make them one recursive datastructure of Type Data
+func recurse(decoder *xml.Decoder, tagList []Tag) (Data, error) {
 
-    tagList := make([]Tag, 0)
-    loc := make([]locations, 0)
-    
-    splitted := split(buff)
-    tagList = getListTags(buff, splitted)
-    open := getOpenTags(buff, splitted)
-    close := getCloseTags(buff, splitted)
+    data := newData(0)
+    index := 0
 
-    loc, err := locAppend(buff, open, close)
-    if err != nil {
-        return nil, nil, fmt.Errorf("getTags() -> %s", err)
-    }
+    for {
+        tok, err := decoder.Token()
+        if err == io.EOF {
+            break
+        }
+        
+        switch tk := tok.(type) {
 
-    return tagList, loc[:], nil
-}
+            case xml.StartElement:
+                
+                name := tk.Name.Local
 
-// getData returns a Data type that recursively contains the tags and their contained informations
-func getData(buff []byte, tags []Tag, loc []locations) {
-    
-    for _, lc := range loc {
-        fmt.Println(string(buff[lc.Open.End:lc.Close.Start]))
-    }
-} 
+                data.Inners = append(data.Inners, newData(index))
+                data.Inners[index].Type = getTag(tagList, name)
 
-// split generate a coordinates list from every tag and tag ending bounds
-func split(buff []byte) []coordinates {
+                data.Inners[index], err = recurse(decoder, tagList)
+                if err != nil {
+                    return Data{}, fmt.Errorf("racurse() -> %s", err)
+                }
 
-    coo := make([]coordinates, 0)
+                index = index + 1
 
-    for index, char := range buff {
-
-        switch char {
-            case '<':
-                coo = append(coo, coordinates{Start: index + 1, End: 0})
-            case '>':
-                coo[len(coo)-1].End = index
+            case xml.EndElement:
+                return data, nil
+            
+            case xml.CharData:
+                data.Value = string(tk)
+            
+            default:
+                return Data{}, fmt.Errorf("recurse() -> Unknown or unused Type encountered, got %T", tok)
         }
     }
-    return coo
+
+    return data, nil
 }
 
-// getListTags return a list of every tag found in the file
-func getListTags(buff []byte, split []coordinates) []Tag {
+// newData return an empty Data Type
+func newData(index int) Data {
+
+    return Data{
+        Type: nil,
+        Index: index,
+        Value: "",
+        Inners: make([]Data, 0),
+    }
+}
+
+// findTags find and return the exhaustive list of unique tags found in the xml file
+func findTags(decoder *xml.Decoder) []Tag {
 
     tagList := make([]Tag, 0)
+    index := 0
 
-    for index := range split {
+    for {
+        tok, err := decoder.Token()
+        if err == io.EOF {
+            break
+        }
+        
+        switch tk := tok.(type) {
 
-        start := split[index].Start
-        end := split[index].End
-        name := buff[start:end]
-       
-        if !(name[0] == '/') {
-            if !tagExist(string(name), tagList) {
-                tagList = append(tagList, Tag{Id: len(tagList), Name: string(name)})
-            }
+            case xml.StartElement:
+
+                if !tagExist(tk.Name.Local, tagList) {
+                    
+                    tagList = append(tagList, Tag{
+                        Id: index,
+                        Name: tk.Name.Local,
+                    })
+                }
         }
     }
     return tagList
 }
 
-// getOpenTags return a list of every opening tag found in the file
-func getOpenTags(buff []byte, split []coordinates) []coordinates {
+// getTag return a single tag from a tagList with a given name as string
+func getTag(tagList []Tag, tok string) *Tag {
 
-    open := make([]coordinates, 0)
-
-    for index := range split {
-
-        start := split[index].Start
-        end := split[index].End
-        name := buff[start:end]
-       
-        if !(name[0] == '/') {
-            open = append(open, coordinates{
-                Start: start,
-                End: end,
-            })
-        }
-    }
-    return open
-}
-
-// getClosTag retrieves the coordinates of every closing tags
-func getCloseTags(buff []byte, split []coordinates) []coordinates {
-
-    close := make([]coordinates, 0)
-
-    for index := range split {
-        start := split[index].Start
-        end := split[index].End
-        name := buff[start:end]
-
-        if name[0] == '/' {
-            close = append(close, coordinates{
-                Start: start,
-                End: end,
-            })
-        }
-    }
-    return close
-}
-
-// locAppend merge two []coordinates lists into a list of locations type
-func locAppend(buff []byte, open []coordinates, close []coordinates) ([]locations, error) {
+    for index, tag := range tagList {
     
-    if len(open) != len(close) {
-        return nil, fmt.Errorf("locAppend() -> Malformed XML file, got '%d' opening tags with '%d' closing tags.", len(open), len(close))
-    }
-
-    loc := make([]locations, 0)
-    
-    for index, op := range open {
-        idx := index
-        for ; idx < len(close); idx = idx + 1 {
-            cl := close[idx]
-            if slices.Equal(buff[op.Start:op.End], buff[cl.Start+1:cl.End]) {
-                loc = append(loc, locations{
-                    Open: op,
-                    Close: close[idx],
-                })
-                break
-            }
+        if tok == tag.Name {
+            return &tagList[index]
         }
     }
-    return loc[:], nil
-}
-
-// getWeight return the weight of each tags from their locations. This weight value is used to check wether a specific tag is into another one.
-func getWeights(loc []locations) []locations {
     
-    for index, tag := range loc {
-        if index == 0 {
-            tag.Weight = 0
-            continue
-        }
-        loc[index].Weight = countWeight(index, loc)
-        fmt.Println(loc[index].Weight)
-    }
-    return loc
-}
-
-// compWeights finds the weight of a specific locations
-func countWeight(index int, loc []locations) int {
-
-    chkOpn := loc[index].Open
-    chkCls := loc[index].Close
-
-    weight := 0
-
-    /*
-    
-    check if the actual position is between any other positions
-    we counts the number of tags that are higher value than the actual position
-
-    */
-
-    for _, check := range loc {
-        cmp := (chkOpn.Start > check.Open.End) && (chkCls.End < check.Close.Start)
-        if cmp {
-            weight = weight + 1
-        }
-    }
-
-    return weight
+    return nil
 }
 
 // tagExist checks if a tag exist in the whole list of tags
 func tagExist(word string, tagList []Tag) bool {
+    
     for _, tag := range tagList {
+    
         if tag.Name == word {
             return true
         }
     }
+    
     return false
 }
