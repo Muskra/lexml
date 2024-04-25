@@ -28,20 +28,18 @@ type Tag struct {
 }
 
 // Parse convert the whole file into a DataSet datastructure
-func (set Set) Parse() (Data, error) {
+func (set Set) Parse() ([]Tag, Data, error) {
 
     decoder := xml.NewDecoder(set.Raw)
 
     tagList := findTags(decoder)
    
-    fmt.Println(tagList)
-
     data, err := recurse(decoder, tagList)
     if err != nil {
-        return Data{}, fmt.Errorf("Parse() -> %s", err)
+        return []Tag{}, Data{}, fmt.Errorf("Parse() -> %s", err)
     }
 
-    return data, nil
+    return tagList, data, nil
 }
 
 // NewSet generates a set that's retuned as pointer
@@ -77,7 +75,6 @@ func recurse(decoder *xml.Decoder, tagList []Tag) (Data, error) {
         switch tk := tok.(type) {
 
             case xml.StartElement:
-                
                 name := tk.Name.Local
 
                 data.Inners = append(data.Inners, newData(index))
@@ -85,16 +82,20 @@ func recurse(decoder *xml.Decoder, tagList []Tag) (Data, error) {
 
                 data.Inners[index], err = recurse(decoder, tagList)
                 if err != nil {
-                    return Data{}, fmt.Errorf("racurse() -> %s", err)
+                    return Data{}, fmt.Errorf("recurse() -> %s", err)
                 }
 
                 index = index + 1
 
+                fmt.Println("Start:", data, index)
+
             case xml.EndElement:
+                fmt.Println("Start:", data, index)
                 return data, nil
             
             case xml.CharData:
                 data.Value = string(tk)
+                fmt.Println("Start:", data, index)
             
             default:
                 return Data{}, fmt.Errorf("recurse() -> Unknown or unused Type encountered, got %T", tok)
