@@ -39,12 +39,12 @@ func (set Set) Parse() ([]Tag, Data, error) {
 	reader = bytes.NewReader(set.Raw)
 	decoder = xml.NewDecoder(reader)
 
-	data, err := recurse(decoder, tagList)
+	content, err := recurse(decoder, tagList)
 	if err != nil {
 		return []Tag{}, Data{}, fmt.Errorf("Parse() -> %s", err)
 	}
 
-	return tagList, data, nil
+	return tagList, content, nil
 }
 
 // NewSet generates a set that's retuned as pointer
@@ -83,12 +83,13 @@ func recurse(decoder *xml.Decoder, tagList []Tag) (Data, error) {
 			name := tk.Name.Local
 
 			data.Inners = append(data.Inners, newData(index))
-			data.Inners[index].Type = getTag(tagList, name)
 
 			data.Inners[index], err = recurse(decoder, tagList)
 			if err != nil {
 				return Data{}, fmt.Errorf("recurse() -> %s", err)
 			}
+
+			data.Inners[index].Type = getTag(tagList, name)
 
 			index = index + 1
 
@@ -110,7 +111,7 @@ func recurse(decoder *xml.Decoder, tagList []Tag) (Data, error) {
 func newData(index int) Data {
 
 	return Data{
-		Type:   nil,
+        Type:   &Tag{Id: 0, Name: "XMLROOT"},
 		Index:  index,
 		Value:  "",
 		Inners: make([]Data, 0),
@@ -149,7 +150,6 @@ func findTags(decoder *xml.Decoder) []Tag {
 func getTag(tagList []Tag, tok string) *Tag {
 
 	for index, tag := range tagList {
-
 		if tok == tag.Name {
 			return &tagList[index]
 		}
