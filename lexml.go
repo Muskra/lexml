@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+    "slices"
 )
 
 // Set is the entrypoint struct to interact with this program with Fields as a list of Tag types, Content that represent the whole XML file, Raw wich represent the raw byte data of the file
@@ -20,6 +21,13 @@ type Data struct {
 	Index  int
 	Value  string
 	Inners []Data
+}
+
+// DataAlt is an altered Data Type without the Inners element, it's used when returning a list of specific Data elements from a LookupId, LookupName or LookupIndex functions
+type DataAlt struct {
+    Type *Tag
+    Index int
+    Value string
 }
 
 // Tags represent fields of a XML file, those are generated on the go
@@ -39,12 +47,79 @@ func (set Set) Parse() ([]Tag, Data, error) {
 	reader = bytes.NewReader(set.Raw)
 	decoder = xml.NewDecoder(reader)
 
-	content, err := recurse(decoder, tagList)
+	content, err := genData(decoder, tagList)
 	if err != nil {
 		return []Tag{}, Data{}, fmt.Errorf("Parse() -> %s", err)
 	}
 
 	return tagList, content, nil
+}
+
+func (data Data) Alter() DataAlt {
+    return DataAlt{
+        Type: data.Type,
+        Index: data.Index,
+        Value: data.Value,
+    }
+}
+
+/*
+
+This won't work since Fields are not accessible, i should consider modify those Data methods to be using Set instead, into each recursion, i should make a copy of the given Set with the Content modified to be the inner content as if we are into recursion.
+
+*/
+
+// LookupId search recursively throught the Content of a given Set Type and returns a list of pointers to every Data elements that are equal to the given id
+func (data Data) LookupId(id int) []DataAlt {
+
+    dataList := make([]DataAlt, 0)
+    givenId := 0
+
+    if intEq(id, data.Type.Id) {
+        dataList = append(dataList, data.Alter())
+    }
+
+    for index, data := range data.Inners {
+
+        givenId = data.Type.Id
+
+        if intEq(id, givenId) {
+            dataList = append(dataList, data.Inners[index].Alter())
+        }
+
+        dataList = slices.Concat(dataList, data.Inners[index].LookupId(index))
+    }
+
+    return dataList
+}
+
+// LookupName search recursively throught the Content of a given Set Type and returns a list of pointers to every Data elements that are equal to the given id
+func (data Data) LookupName(name string) []DataAlt {
+
+    dataList := make([]DataAlt, 0)
+    givenName := ""
+
+    if strEq(name, data.Type.Name) {
+        dataList = append(dataList, data.Alter())
+    }
+
+    for index, data := range data.Inners {
+        
+        givenName = data.Type.Name
+
+        if strEq(name, givenName) {
+            dataList = append(dataList, data.Inners[index].Alter())
+        }
+
+        dataList = slices.Concat(dataList, data.Inners[index].LookupId(index))
+    }
+
+    return[]DataAlt{}
+}
+
+// LookupIndex search recursively througt the Content of a given Set Type and returns the element present at a specific index of a given depth
+func (set Set) LookupIndex(depth int, index int) []DataAlt {
+    return []DataAlt{}
 }
 
 // NewSet generates a set that's retuned as pointer
@@ -66,7 +141,7 @@ func NewSet(buff []byte) *Set {
 }
 
 // recurse recreates a recursive Data datastructure representation of the file itself. It's taking every tags, subtags and data to make them one recursive datastructure of Type Data
-func recurse(decoder *xml.Decoder, tagList []Tag) (Data, error) {
+func genData(decoder *xml.Decoder, tagList []Tag) (Data, error) {
 
 	data := newData(0)
 	index := 0
@@ -84,7 +159,7 @@ func recurse(decoder *xml.Decoder, tagList []Tag) (Data, error) {
 
 			data.Inners = append(data.Inners, newData(index))
 
-			data.Inners[index], err = recurse(decoder, tagList)
+			data.Inners[index], err = genData(decoder, tagList)
 			if err != nil {
 				return Data{}, fmt.Errorf("recurse() -> %s", err)
 			}
@@ -156,6 +231,26 @@ func getTag(tagList []Tag, tok string) *Tag {
 	}
 
 	return nil
+}
+
+// returns the Id of a given Data Type
+func getId(data Data) int {
+    return data.Type.Id
+}
+
+// intEq checks equality of two given Int values 
+func intEq(orig int, given int) bool {
+    return (orig == given)
+}
+
+// returns the Name of a given Data Type
+func getName(data Data) int {
+    return data.Type.Id
+}
+
+// strEq checks equality of two given String values
+func strEq(orig string, given string) bool {
+    return bytes.Equal([]byte(orig), []byte(given))
 }
 
 // tagExist checks if a tag exist in the whole list of tags
