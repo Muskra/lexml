@@ -63,12 +63,6 @@ func (data Data) Alter() DataAlt {
     }
 }
 
-/*
-
-This won't work since Fields are not accessible, i should consider modify those Data methods to be using Set instead, into each recursion, i should make a copy of the given Set with the Content modified to be the inner content as if we are into recursion.
-
-*/
-
 // LookupId search recursively throught the Content of a given Set Type and returns a list of pointers to every Data elements that are equal to the given id
 func (data Data) LookupId(id int) []DataAlt {
 
@@ -79,15 +73,15 @@ func (data Data) LookupId(id int) []DataAlt {
         dataList = append(dataList, data.Alter())
     }
 
-    for index, data := range data.Inners {
-
-        givenId = data.Type.Id
+    for index, dt := range data.Inners {
+        
+        givenId = dt.Type.Id
 
         if intEq(id, givenId) {
-            dataList = append(dataList, data.Inners[index].Alter())
+            dataList = append(dataList, dt.Alter())
         }
 
-        dataList = slices.Concat(dataList, data.Inners[index].LookupId(index))
+        dataList = slices.Concat(dataList, dt.LookupId(index))
     }
 
     return dataList
@@ -103,23 +97,41 @@ func (data Data) LookupName(name string) []DataAlt {
         dataList = append(dataList, data.Alter())
     }
 
-    for index, data := range data.Inners {
+    for _, dt := range data.Inners {
         
-        givenName = data.Type.Name
+        givenName = dt.Type.Name
 
         if strEq(name, givenName) {
-            dataList = append(dataList, data.Inners[index].Alter())
+            dataList = append(dataList, dt.Alter())
         }
 
-        dataList = slices.Concat(dataList, data.Inners[index].LookupId(index))
+        dataList = slices.Concat(dataList, dt.LookupName(name))
     }
 
-    return[]DataAlt{}
+    return dataList
 }
 
-// LookupIndex search recursively througt the Content of a given Set Type and returns the element present at a specific index of a given depth
-func (set Set) LookupIndex(depth int, index int) []DataAlt {
-    return []DataAlt{}
+// LookupIndex search recursively througt the Content of a given Set Type and returns the element present at a specific index of a given depth. depth is based on x and y is the index in the Inners Type
+func (data Data) LookupIndex(depth int, x int, y int) DataAlt {
+
+    retData := DataAlt{
+        Type: nil,
+        Index: 0,
+        Value: "",
+    }
+
+    for index, dt := range data.Inners {
+
+        if !(depth == x) {
+            retData = dt.LookupIndex(depth+1, x, y)
+
+        } else if (depth == x) && (index == y) {
+            retData = dt.Alter()
+            break
+        }
+    }
+
+    return retData
 }
 
 // NewSet generates a set that's retuned as pointer
