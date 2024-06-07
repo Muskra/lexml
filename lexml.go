@@ -8,14 +8,14 @@ import (
     "slices"
 )
 
-// Set is the entrypoint struct to interact with this program with Fields as a list of Tag types, Content that represent the whole XML file, Raw wich represent the raw byte data of the file
+// Set type is the entrypoint struct to interact with this program with Fields as a list of Tag types, Content that represent the whole XML file, Raw wich represent the raw byte data of the file
 type Set struct {
 	Fields  []Tag
 	Content Data
 	Raw     []byte
 }
 
-// Data is a recursive representation of a parsed XML file content
+// Data type is a recursive representation of a parsed XML file content
 type Data struct {
 	Type   *Tag
 	Index  int
@@ -23,21 +23,22 @@ type Data struct {
 	Inners []Data
 }
 
-// DataAlt is an altered Data Type without the Inners element, it's used when returning a list of specific Data elements from a LookupId, LookupName or LookupIndex functions
+// DataAlt type is an altered Data Type without the Inners element, it's used when returning a list of specific Data elements from a LookupId, LookupName or LookupIndex functions
 type DataAlt struct {
     Type *Tag
     Index int
     Value string
 }
 
-// Tags represent fields of a XML file, those are generated on the go
+// Tags type represent fields of a XML file, those are generated on the go
 type Tag struct {
 	Id   int
 	Name string
 }
 
-// Parse convert the whole file into a DataSet datastructure
+// Parse method convert the whole file into a DataSet datastructure
 func (set Set) Parse() ([]Tag, Data, error) {
+
 
 	reader := bytes.NewReader(set.Raw)
 	decoder := xml.NewDecoder(reader)
@@ -47,7 +48,10 @@ func (set Set) Parse() ([]Tag, Data, error) {
 	reader = bytes.NewReader(set.Raw)
 	decoder = xml.NewDecoder(reader)
 
-	content, err := genData(decoder, tagList)
+	content, err := genData(decoder, tagList,0)
+
+	displayIndex(content,"")
+
 	if err != nil {
 		return []Tag{}, Data{}, fmt.Errorf("Parse() -> %s", err)
 	}
@@ -55,6 +59,7 @@ func (set Set) Parse() ([]Tag, Data, error) {
 	return tagList, content, nil
 }
 
+// Alter method generate a DataAlt Type
 func (data Data) Alter() DataAlt {
     return DataAlt{
         Type: data.Type,
@@ -63,7 +68,7 @@ func (data Data) Alter() DataAlt {
     }
 }
 
-// LookupId search recursively throught the Content of a given Set Type and returns a list of pointers to every Data elements that are equal to the given id
+// LookupId method search recursively throught the Content of a given Set Type and returns a list of pointers to every Data elements that are equal to the given id
 func (data Data) LookupId(id int) []DataAlt {
 
     dataList := make([]DataAlt, 0)
@@ -74,7 +79,7 @@ func (data Data) LookupId(id int) []DataAlt {
     }
 
     for index, dt := range data.Inners {
-        
+
         givenId = dt.Type.Id
 
         if intEq(id, givenId) {
@@ -87,7 +92,7 @@ func (data Data) LookupId(id int) []DataAlt {
     return dataList
 }
 
-// LookupName search recursively throught the Content of a given Set Type and returns a list of pointers to every Data elements that are equal to the given id
+// LookupName method search recursively throught the Content of a given Set Type and returns a list of pointers to every Data elements that are equal to the given id
 func (data Data) LookupName(name string) []DataAlt {
 
     dataList := make([]DataAlt, 0)
@@ -98,7 +103,7 @@ func (data Data) LookupName(name string) []DataAlt {
     }
 
     for _, dt := range data.Inners {
-        
+
         givenName = dt.Type.Name
 
         if strEq(name, givenName) {
@@ -111,7 +116,7 @@ func (data Data) LookupName(name string) []DataAlt {
     return dataList
 }
 
-// LookupIndex search recursively througt the Content of a given Set Type and returns the element present at a specific index of a given depth. depth is based on x and y is the index in the Inners Type
+// LookupIndex method search recursively througt the Content of a given Set Type and returns the element present at a specific index of a given depth. depth is based on x and y is the index in the Inners Type
 func (data Data) LookupIndex(depth int, x int, y int) DataAlt {
 
     retData := DataAlt{
@@ -134,7 +139,21 @@ func (data Data) LookupIndex(depth int, x int, y int) DataAlt {
     return retData
 }
 
-// NewSet generates a set that's retuned as pointer
+func (data Data) PreFormatAll() []DataAlt {
+
+    dataList := make([]DataAlt, 0)
+
+    //dataList = append(dataList, data.Alter())
+
+    for _, dt := range data.Inners {
+        dataList = append(dataList, dt.Alter())
+
+        dataList = slices.Concat(dataList, dt.PreFormatAll())
+    }
+    return dataList
+}
+
+// NewSet function generates a set that's retuned as pointer
 func NewSet(buff []byte) *Set {
 
 	return &Set{
@@ -152,39 +171,54 @@ func NewSet(buff []byte) *Set {
 	}
 }
 
-// recurse recreates a recursive Data datastructure representation of the file itself. It's taking every tags, subtags and data to make them one recursive datastructure of Type Data
-func genData(decoder *xml.Decoder, tagList []Tag) (Data, error) {
+func FormatPrint(dataAltSlice []DataAlt) {
+    for _, dt := range dataAltSlice {
+        fmt.Printf("Id: %d\tName: %s\tIndex: %d\tValue: %s\n", dt.Type.Id, dt.Type.Name, dt.Index, dt.Value)
+    }
+}
 
-	data := newData(0)
-	index := 0
+func displayIndex(data Data, prefix string) {
+	//fmt.Println("Value",data.Type.Name)
+	fmt.Printf("%sPosition: %d Contenu: %s TagName: %s\n", prefix, data.Index, data.Value, data.Type.Name)
+
+	for _, inner := range data.Inners {
+			displayIndex(inner, prefix+"  ")
+	}
+}
+
+// genData function recreates a recursive Data datastructure representation of the file itself. It's taking every tags, subtags and data to make them one recursive datastructure of Type Data
+func genData(decoder *xml.Decoder, tagList []Tag, index int) (Data, error) {
+
+	data := newData(index)
 
 	for {
 		tok, err := decoder.Token()
 		if err == io.EOF {
 			break
 		}
-
 		switch tk := tok.(type) {
 
 		case xml.StartElement:
+
 			name := tk.Name.Local
-
 			data.Inners = append(data.Inners, newData(index))
-
-			data.Inners[index], err = genData(decoder, tagList)
+			data.Inners[len(data.Inners)-1], err = genData(decoder, tagList,len(data.Inners)-1)
 			if err != nil {
 				return Data{}, fmt.Errorf("recurse() -> %s", err)
 			}
+			data.Inners[len(data.Inners)-1].Type = getTag(tagList, name)
 
-			data.Inners[index].Type = getTag(tagList, name)
-
-			index = index + 1
 
 		case xml.EndElement:
 			return data, nil
 
 		case xml.CharData:
-			data.Value = string(tk)
+			if string(tok.(xml.CharData)) != "\n" {
+				data.Value = string(tk)
+			}
+
+        case xml.ProcInst:
+            continue
 
 		default:
 			return Data{}, fmt.Errorf("recurse() -> Unknown or unused Type encountered, got %T", tok)
@@ -194,18 +228,18 @@ func genData(decoder *xml.Decoder, tagList []Tag) (Data, error) {
 	return data, nil
 }
 
-// newData return an empty Data Type
+// newData function return an empty Data Type
 func newData(index int) Data {
 
 	return Data{
-        Type:   &Tag{Id: 0, Name: "XMLROOT"},
+    Type:   &Tag{Id: 0, Name: "XMLROOT"},
 		Index:  index,
 		Value:  "",
 		Inners: make([]Data, 0),
 	}
 }
 
-// findTags find and return the exhaustive list of unique tags found in the xml file
+// findTags function find and return the exhaustive list of unique tags found in the xml file
 func findTags(decoder *xml.Decoder) []Tag {
 
 	tagList := make([]Tag, 0)
@@ -233,7 +267,7 @@ func findTags(decoder *xml.Decoder) []Tag {
 	return tagList
 }
 
-// getTag return a single tag from a tagList with a given name as string
+// getTag function return a single tag from a tagList with a given name as string
 func getTag(tagList []Tag, tok string) *Tag {
 
 	for index, tag := range tagList {
@@ -245,27 +279,27 @@ func getTag(tagList []Tag, tok string) *Tag {
 	return nil
 }
 
-// returns the Id of a given Data Type
+// getId function returns the Id of a given Data Type
 func getId(data Data) int {
     return data.Type.Id
 }
 
-// intEq checks equality of two given Int values 
+// intEq function checks equality of two given Int values
 func intEq(orig int, given int) bool {
     return (orig == given)
 }
 
-// returns the Name of a given Data Type
+// getName function returns the Name of a given Data Type
 func getName(data Data) int {
     return data.Type.Id
 }
 
-// strEq checks equality of two given String values
+// strEq function checks equality of two given String values
 func strEq(orig string, given string) bool {
     return bytes.Equal([]byte(orig), []byte(given))
 }
 
-// tagExist checks if a tag exist in the whole list of tags
+// tagExist function checks if a tag exist in the whole list of tags
 func tagExist(word string, tagList []Tag) bool {
 
 	for _, tag := range tagList {
@@ -277,3 +311,4 @@ func tagExist(word string, tagList []Tag) bool {
 
 	return false
 }
+
