@@ -5,7 +5,10 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-    "slices"
+  "slices"
+	"strconv"
+	"strings"
+
 )
 
 // Set type is the entrypoint struct to interact with this program with Fields as a list of Tag types, Content that represent the whole XML file, Raw wich represent the raw byte data of the file
@@ -49,8 +52,10 @@ func (set Set) Parse() ([]Tag, Data, error) {
 	decoder = xml.NewDecoder(reader)
 
 	content, err := genData(decoder, tagList,0)
-
-	displayIndex(content,"")
+	//133610189360577891
+	//findProcess(content, "",0)
+	findCreateKey(content,"",0)
+	//displayIndex(content,"")
 
 	if err != nil {
 		return []Tag{}, Data{}, fmt.Errorf("Parse() -> %s", err)
@@ -142,9 +147,7 @@ func (data Data) LookupIndex(depth int, x int, y int) DataAlt {
 func (data Data) PreFormatAll() []DataAlt {
 
     dataList := make([]DataAlt, 0)
-
     //dataList = append(dataList, data.Alter())
-
     for _, dt := range data.Inners {
         dataList = append(dataList, dt.Alter())
 
@@ -171,18 +174,40 @@ func NewSet(buff []byte) *Set {
 	}
 }
 
-func FormatPrint(dataAltSlice []DataAlt) {
+func formatPrint(dataAltSlice []DataAlt) {
     for _, dt := range dataAltSlice {
         fmt.Printf("Id: %d\tName: %s\tIndex: %d\tValue: %s\n", dt.Type.Id, dt.Type.Name, dt.Index, dt.Value)
     }
 }
 
 func displayIndex(data Data, prefix string) {
-	//fmt.Println("Value",data.Type.Name)
 	fmt.Printf("%sPosition: %d Contenu: %s TagName: %s\n", prefix, data.Index, data.Value, data.Type.Name)
-
 	for _, inner := range data.Inners {
 			displayIndex(inner, prefix+"  ")
+	}
+}
+
+//in development.....
+//si on passe 0 dans l'argument processIndex alors, on applique aucun filtrage sur les processus
+func findCreateKey(data Data, prefix string, processIndex int){
+	if data.Type.Name == "event"{
+		dataProcessIndex, err := strconv.Atoi(data.Inners[0].Value)
+    if err != nil {
+        fmt.Println("Erreur de conversion:", err)
+		}
+		if dataProcessIndex == processIndex || processIndex == 0 {
+			if data.Inners[4].Type.Name == "Operation" && data.Inners[4].Value == "RegCreateKey" {
+				if data.Inners[7].Type.Name == "Detail" && strings.Contains(data.Inners[7].Value , "REG_CREATED_NEW_KEY"){
+					fmt.Println("-----------------------------------------------------")
+					fmt.Printf("%sTime of Day: %s \n", prefix, data.Inners[1].Value)
+					fmt.Printf("%sProcess Name of Day: %s \n", prefix, data.Inners[2].Value)
+					fmt.Printf("%sPath: %s \n", prefix, data.Inners[5].Value)
+				}
+			}
+		}
+	}
+	for _, inner := range data.Inners {
+		findCreateKey(inner,prefix+"  ",processIndex)
 	}
 }
 
@@ -311,4 +336,3 @@ func tagExist(word string, tagList []Tag) bool {
 
 	return false
 }
-
