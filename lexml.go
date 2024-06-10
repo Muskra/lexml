@@ -53,8 +53,8 @@ func (set Set) Parse() ([]Tag, Data, error) {
 
 	content, err := genData(decoder, tagList,0)
 	//133610189360577891
-	//findProcess(content, "",0)
-	findCreateKey(content,"",0)
+	findProcess(content, "",0,0)
+	//findCreateKey(content,"",0)
 	//displayIndex(content,"")
 
 	if err != nil {
@@ -208,6 +208,35 @@ func findCreateKey(data Data, prefix string, processIndex int){
 	}
 	for _, inner := range data.Inners {
 		findCreateKey(inner,prefix+"  ",processIndex)
+	}
+}
+
+//in development.....
+//si on passe 0 dans l'argument processIndex alors, on applique aucun filtrage sur les processus
+func findProcess(data Data, prefix string, processIndex int, createTime int){
+	if data.Type.Name == "process"{
+		dataProcessIndex, err := strconv.Atoi(data.Inners[0].Value)
+    if err != nil {
+        fmt.Println("Erreur de conversion:", err)
+		}
+		dataCreateTime, err := strconv.Atoi(data.Inners[5].Value)
+		if err != nil {
+        fmt.Println("Erreur de conversion:", err)
+		}
+		if dataProcessIndex == processIndex || processIndex == 0  {
+			if dataCreateTime >= createTime || createTime == 0 {
+				fmt.Println("-----------------------------------------------------")
+				fmt.Printf("%sCreateTime: %s \n", prefix, data.Inners[5].Value)
+				fmt.Printf("%sProcess ID: %s \n", prefix, data.Inners[1].Value)
+				fmt.Printf("%sProcess Name: %s \n", prefix, data.Inners[11].Value)
+				fmt.Printf("%sImage path: %s \n", prefix, data.Inners[12].Value)
+				fmt.Printf("%sCommand Line: %s \n", prefix, data.Inners[13].Value)
+				fmt.Printf("%sDescription: %s \n", prefix, data.Inners[16].Value)
+			}
+		}
+	}
+	for _, inner := range data.Inners {
+		findProcess(inner,prefix+"  ",processIndex, createTime)
 	}
 }
 
