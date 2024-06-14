@@ -53,8 +53,12 @@ func (set Set) Parse() ([]Tag, Data, error) {
 
 	content, err := genData(decoder, tagList,0)
 	//133610189360577891
-	findProcess(content, "",0,0)
-	//findCreateKey(content,"",0)
+
+	liste := []int{4956, 976, 1756, 6016}
+	for _, element := range liste {
+  	findProcess(content, "",element,0)
+  }
+	findCreateKey(content,"",4956)
 	//displayIndex(content,"")
 
 	if err != nil {
@@ -191,7 +195,7 @@ func displayIndex(data Data, prefix string) {
 //si on passe 0 dans l'argument processIndex alors, on applique aucun filtrage sur les processus
 func findCreateKey(data Data, prefix string, processIndex int){
 	if data.Type.Name == "event"{
-		dataProcessIndex, err := strconv.Atoi(data.Inners[0].Value)
+		dataProcessIndex, err := strconv.Atoi(data.Inners[3].Value)
     if err != nil {
         fmt.Println("Erreur de conversion:", err)
 		}
@@ -213,9 +217,33 @@ func findCreateKey(data Data, prefix string, processIndex int){
 
 //in development.....
 //si on passe 0 dans l'argument processIndex alors, on applique aucun filtrage sur les processus
+func findDeleteKey(data Data, prefix string, processIndex int){
+	if data.Type.Name == "event"{
+		dataProcessIndex, err := strconv.Atoi(data.Inners[3].Value)
+    if err != nil {
+        fmt.Println("Erreur de conversion:", err)
+		}
+		if dataProcessIndex == processIndex || processIndex == 0 {
+			if data.Inners[4].Type.Name == "Operation" && data.Inners[4].Value == "RegDeleteKey" {
+				if data.Inners[7].Type.Name == "Result" && strings.Contains(data.Inners[6].Value , "SUCCES"){
+					fmt.Println("-----------------------------------------------------")
+					fmt.Printf("%sTime of Day: %s \n", prefix, data.Inners[1].Value)
+					fmt.Printf("%sProcess Name of Day: %s \n", prefix, data.Inners[2].Value)
+					fmt.Printf("%sPath: %s \n", prefix, data.Inners[5].Value)
+				}
+			}
+		}
+	}
+	for _, inner := range data.Inners {
+		findCreateKey(inner,prefix+"  ",processIndex)
+	}
+}
+
+//in development.....
+//si on passe 0 dans l'argument processIndex alors, on applique aucun filtrage sur les processus
 func findProcess(data Data, prefix string, processIndex int, createTime int){
 	if data.Type.Name == "process"{
-		dataProcessIndex, err := strconv.Atoi(data.Inners[0].Value)
+		dataProcessIndex, err := strconv.Atoi(data.Inners[1].Value)
     if err != nil {
         fmt.Println("Erreur de conversion:", err)
 		}
