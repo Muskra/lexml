@@ -1,0 +1,7 @@
+package lexml // import "command-line-arguments"
+
+type Data struct{ ... }
+type DataAlt struct{ ... }
+type Set struct{ ... }
+    func NewSet(buff []byte) *Set
+type Tag struct{ ... }
